@@ -144,11 +144,10 @@ function simulate(data){
   demoState = demoState || {tick:0, closed:{}};
   demoState.tick++;
   const t = Math.min(demoState.tick / 12, 1); // finishes after ~12 polls (6 min)
-  let gClosed = 0;
   for (const block of d.areaResults)
     for (const [id, area] of Object.entries(block)){
       const s = area.statistics;
-      s.closedPolls = Math.round(s.polls * t); gClosed += s.closedPolls;
+      s.closedPolls = Math.round(s.polls * t);
       for (const c of area.contestResults){
         let tot = 0;
         c.choiceResults.forEach((ch, i) => {
@@ -162,8 +161,9 @@ function simulate(data){
         }
       }
     }
-  d.statistics.globClosedPolls = gClosed;
-  d.statistics.timeStamp = new Date().toISOString().slice(0,19).replace("T"," ");
+  d.statistics.globClosedPolls = Math.round(d.statistics.globPolls * t);
+  const n = new Date(), z = x => String(x).padStart(2,"0");
+  d.statistics.timeStamp = `${n.getFullYear()}-${z(n.getMonth()+1)}-${z(n.getDate())} ${z(n.getHours())}:${z(n.getMinutes())}:${z(n.getSeconds())}`;
   return d;
 }
 

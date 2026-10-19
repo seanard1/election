@@ -401,9 +401,11 @@ def main():
         ok = post(f":wave: Election watcher connected at {cp_time()}. Watching {FEED_URL}", a.dry_run)
         sys.exit(0 if ok else 1)
 
-    if a.reset and os.path.exists(STATE_FILE):
-        os.remove(STATE_FILE)
+    if a.reset:
+        if os.path.exists(STATE_FILE):
+            os.remove(STATE_FILE)
         log("alert history cleared")
+        sys.exit(0)
 
     if a.simulate:  # never mix simulated alerts into the real history
         STATE_FILE = os.path.join(HERE, "election_state.sim.json")

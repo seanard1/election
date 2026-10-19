@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hamilton Election Results</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --sub:#5c5c5c; --rule:#dcdcdc; --bg:#fff; --card:#fafafa;
+    --accent:#0b5aa2; --bar:#c9d9ea; --lead:#0b5aa2; --win:#1e7b34; --warn:#a15c00;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#eee; --sub:#a8a8a8; --rule:#3a3a3a; --bg:#151515; --card:#1e1e1e;
+      --accent:#6fb0ee; --bar:#2c4258; --lead:#6fb0ee; --win:#59c272; --warn:#e0a24a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#eee; --sub:#a8a8a8; --rule:#3a3a3a; --bg:#151515; --card:#1e1e1e;
+    --accent:#6fb0ee; --bar:#2c4258; --lead:#6fb0ee; --win:#59c272; --warn:#e0a24a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.4 "Helvetica Neue",Arial,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:12px 16px 24px}
+  h1{font:700 22px/1.2 Georgia,"Times New Roman",serif;margin:0 0 4px}
+  .status{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--sub);
+    border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:10px}
+  .status b{color:var(--ink)}
+  .status .stale{color:var(--warn);font-weight:700}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .tabs button{font:600 13px/1 inherit;font-family:inherit;padding:8px 12px;border:1px solid var(--rule);
+    background:var(--card);color:var(--ink);border-radius:3px;cursor:pointer}
+  .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .race{background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:10px 12px;margin-bottom:12px}
+  .race h2{font:700 17px/1.25 Georgia,serif;margin:0}
+  .meta{font-size:12px;color:var(--sub);margin:2px 0 8px}
+  .row{display:grid;grid-template-columns:1fr auto auto;gap:2px 10px;align-items:center;
+    padding:5px 0;border-top:1px solid var(--rule);position:relative}
+  .row:first-of-type{border-top:0}
+  .name{position:relative;z-index:1;min-width:0;overflow-wrap:anywhere}
+  .name .tag{font-size:11px;color:var(--sub);margin-left:4px}
+  .num{font-variant-numeric:tabular-nums;text-align:right;position:relative;z-index:1}
+  .pct{min-width:48px;font-weight:700}
+  .barbg{position:absolute;left:0;top:3px;bottom:3px;background:var(--bar);border-radius:2px;
+    transition:width .6s ease;z-index:0;opacity:.75}
+  .row.lead .name{font-weight:700}
+  .row.lead .barbg{background:var(--lead);opacity:.28}
+  .row.win .name::before{content:"✓ ";color:var(--win);font-weight:700}
+  .acclaimed{font-size:13px;color:var(--sub)}
+  .foot{font-size:12px;color:var(--sub);margin-top:8px}
+  .err{color:var(--warn);font-size:13px;margin:6px 0}
+  .demo{background:var(--warn);color:#fff;font:700 11px/1 inherit;padding:3px 6px;border-radius:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">Hamilton municipal election results</h1>
+  <div class="status" id="status">Loading results…</div>
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <div id="err" class="err" hidden></div>
+  <div id="races"></div>
+  <div class="foot">Unofficial results from the City of Hamilton. Refreshes every 30 seconds.</div>
+</div>
+
+<script>
+/* ===== CONFIG ===== */
+const FEED_URL = "https://REPLACE-WITH-YOUR-WORKER.workers.dev/";  // the Cloudflare Worker
+const POLL_MS  = 30000;
+
+// Fix surnames the auto-caser gets wrong. Key = surname exactly as the city sends it.
+const NAME_FIX = {
+  "DIFALCO": "DiFalco",
+  "DEMELO": "DeMelo",
+  "DI NICOLA": "Di Nicola",
+  "TENBRINKE": "Tenbrinke",
+};
+
+/* ===== URL options =====
+   ?race=1005        show one contest only (for embedding in a ward story)
+   ?tab=council      open on a tab: mayor | council | hwdsb | hwcdsb
+   ?demo=1           fake votes accumulating each poll, for testing before election night
+   ?src=URL          override the feed URL
+   ?theme=light|dark force theme
+*/
+const qs = new URLSearchParams(location.search);
+const ONLY_RACE = qs.get("race");
+const DEMO = qs.has("demo");
+const SRC = qs.get("src") || FEED_URL;
+if (qs.get("theme")) document.documentElement.dataset.theme = qs.get("theme");
+
+const TABS = [
+  {id:"mayor",   label:"Mayor",                 test:n => /^Mayor/i.test(n)},
+  {id:"council", label:"Council",               test:n => /^Councillor/i.test(n)},
+  {id:"hwdsb",   label:"Public school board",   test:n => /District School Board/i.test(n) && !/Catholic/i.test(n)},
+  {id:"hwcdsb",  label:"Catholic school board", test:n => /Catholic/i.test(n)},
+];
+let activeTab = TABS.some(t => t.id === qs.get("tab")) ? qs.get("tab") : "mayor";
+let lastGood = null, lastStamp = null, failures = 0, timer = null;
+
+/* ===== Formatting (CP style) ===== */
+function caseWord(w){
+  if (NAME_FIX[w]) return NAME_FIX[w];
+  return w.toLowerCase()
+    .replace(/(^|[-'\s])([a-z])/g, (m,p,c) => p + c.toUpperCase())
+    .replace(/\bMc([a-z])/g, (m,c) => "Mc" + c.toUpperCase());
+}
+function displayName(raw){
+  const i = raw.indexOf(",");
+  if (i < 0) return raw;
+  const last = raw.slice(0,i).trim(), first = raw.slice(i+1).trim();
+  return first + " " + (NAME_FIX[last] || caseWord(last));
+}
+function raceTitle(n){
+  return n.replace(/^Councillor - /, "")
+          .replace(/^Trustee, Hamilton-Wentworth (Catholic )?District School Board - /, "Trustee, ");
+}
+const fmt = n => n.toLocaleString("en-CA");
+function cpTime(d){
+  let h = d.getHours(), m = String(d.getMinutes()).padStart(2,"0");
+  const ap = h < 12 ? "a.m." : "p.m."; h = h % 12 || 12;
+  return m === "00" ? `${h} ${ap}` : `${h}:${m} ${ap}`;
+}
+function parseStamp(s){ // "2026-08-28 03:31:25" — city local time
+  const d = new Date(s.replace(" ","T"));
+  return isNaN(d) ? null : d;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ===== Data ===== */
+function flatten(data){
+  const out = [];
+  for (const block of data.areaResults || [])
+    for (const [areaId, area] of Object.entries(block))
+      for (const c of area.contestResults || [])
+        out.push({areaId, stats: area.statistics, ...c});
+  return out.sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+}
+
+/* ===== Demo simulator ===== */
+let demoState = null;
+function simulate(data){
+  const d = structuredClone(data);
+  demoState = demoState || {tick:0, closed:{}};
+  demoState.tick++;
+  const t = Math.min(demoState.tick / 12, 1); // finishes after ~12 polls (6 min)
+  let gClosed = 0;
+  for (const block of d.areaResults)
+    for (const [id, area] of Object.entries(block)){
+      const s = area.statistics;
+      s.closedPolls = Math.round(s.polls * t); gClosed += s.closedPolls;
+      for (const c of area.contestResults){
+        let tot = 0;
+        c.choiceResults.forEach((ch, i) => {
+          const key = c.id + "-" + ch.id;
+          demoState.closed[key] = demoState.closed[key] || (Math.random() * 3000 + 200) / (i % 3 + 1);
+          ch.votes = Math.round(demoState.closed[key] * t); tot += ch.votes;
+        });
+        if (t === 1 && tot){
+          const max = Math.max(...c.choiceResults.map(x => x.votes));
+          c.choiceResults.forEach(x => x.isWinner = x.votes === max ? 1 : 0);
+        }
+      }
+    }
+  d.statistics.globClosedPolls = gClosed;
+  d.statistics.timeStamp = new Date().toISOString().slice(0,19).replace("T"," ");
+  return d;
+}
+
+/* ===== Render ===== */
+function renderTabs(){
+  const el = document.getElementById("tabs");
+  if (ONLY_RACE){ el.hidden = true; return; }
+  el.innerHTML = TABS.map(t =>
+    `<button role="tab" aria-selected="${t.id===activeTab}" data-t="${t.id}">${t.label}</button>`).join("");
+  el.onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    activeTab = b.dataset.t; renderTabs(); if (lastGood) render(lastGood, true);
+  };
+}
+
+function render(data, quiet){
+  const g = data.statistics || {};
+  const races = flatten(data).filter(c =>
+    ONLY_RACE ? c.id === ONLY_RACE : TABS.find(t => t.id === activeTab).test(c.contestName));
+
+  if (ONLY_RACE && races[0]) document.getElementById("title").textContent = raceTitle(races[0].contestName);
+
+  document.getElementById("races").innerHTML = races.map(c => {
+    const total = c.choiceResults.reduce((s,x) => s + (+x.votes || 0), 0);
+    const cands = [...c.choiceResults];
+    if (total) cands.sort((a,b) => b.votes - a.votes);   // ballot order until counting starts
+    const top = total ? cands[0].votes : -1;
+    const tied = cands.filter(x => x.votes === top).length > 1;
+    const st = c.stats || {};
+    const rows = c.isAcclaimed
+      ? `<div class="acclaimed">${esc(displayName(cands[0]?.choiceName || ""))} acclaimed</div>`
+      : cands.map(x => {
+          const pct = total ? (x.votes / total * 100) : 0;
+          const lead = total && x.votes === top && !tied;
+          const tags = x.isIncumbent ? `<span class="tag">(incumbent)</span>` : "";
+          return `<div class="row${lead?" lead":""}${x.isWinner?" win":""}">
+            <div class="barbg" style="width:${pct.toFixed(2)}%"></div>
+            <div class="name">${esc(displayName(x.choiceName))}${tags}</div>
+            <div class="num">${fmt(+x.votes||0)}</div>
+            <div class="num pct">${total ? pct.toFixed(1) + "%" : "—"}</div>
+          </div>`;
+        }).join("");
+    return `<section class="race">
+      <h2>${esc(raceTitle(c.contestName))}</h2>
+      <div class="meta">${fmt(st.closedPolls||0)} of ${fmt(st.polls||0)} polls reporting · ${fmt(total)} votes</div>
+      ${rows}
+    </section>`;
+  }).join("") || `<p class="meta">No contests in this category.</p>`;
+
+  if (!quiet) renderStatus(data);
+}
+
+function renderStatus(data, staleNote){
+  const g = data.statistics || {};
+  const stamp = parseStamp(g.timeStamp || "");
+  const done = g.globPolls && g.globClosedPolls >= g.globPolls;
+  document.getElementById("status").innerHTML =
+    (DEMO ? `<span class="demo">DEMO DATA</span>` : "") +
+    `<span><b>${fmt(g.globClosedPolls||0)}</b> of <b>${fmt(g.globPolls||0)}</b> polls reporting</span>` +
+    (g.globTurnout && g.globTurnout !== "0%" ? `<span>Turnout <b>${esc(g.globTurnout)}</b></span>` : "") +
+    (stamp ? `<span>City update ${cpTime(stamp)}</span>` : "") +
+    (done ? `<span><b>All polls reported</b></span>` : `<span id="cd"></span>`) +
+    (staleNote ? `<span class="stale">${staleNote}</span>` : "");
+}
+
+/* ===== Polling ===== */
+async function poll(){
+  clearTimeout(timer);
+  try {
+    const r = await fetch(SRC + (SRC.includes("?") ? "&" : "?") + "_=" + Date.now(), {cache:"no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    let data = await r.json();
+    if (!data.areaResults) throw new Error("unexpected feed shape");
+    if (DEMO) data = simulate(data);
+    failures = 0;
+    document.getElementById("err").hidden = true;
+    const changed = data.statistics?.timeStamp !== lastStamp || DEMO;
+    lastGood = data; lastStamp = data.statistics?.timeStamp;
+    if (changed) render(data);
+    const feedStale = r.headers.get("X-Feed-State") === "stale";
+    renderStatus(data, feedStale ? "City feed not responding — showing last results" : "");
+    const g = data.statistics || {};
+    if (g.globPolls && g.globClosedPolls >= g.globPolls && !DEMO) return schedule(POLL_MS * 4);
+  } catch (e) {
+    failures++;
+    if (lastGood) renderStatus(lastGood, "Connection problem — retrying");
+    else { const el = document.getElementById("err"); el.hidden = false; el.textContent = "Results are not available yet. Retrying…"; }
+  }
+  schedule(Math.min(POLL_MS * Math.max(1, failures), 120000));
+}
+
+let nextAt = 0;
+function schedule(ms){ nextAt = Date.now() + ms; timer = setTimeout(poll, ms); }
+setInterval(() => {
+  const el = document.getElementById("cd");
+  if (el && nextAt) el.textContent = "Next refresh in " + Math.max(0, Math.ceil((nextAt - Date.now())/1000)) + " s";
+}, 1000);
+// don't poll from background tabs; catch up immediately when the reader comes back
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearTimeout(timer);
+  else poll();
+});
+
+renderTabs();
+poll();
+</script>
+</body>
+</html>

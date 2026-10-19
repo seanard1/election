@@ -208,7 +208,7 @@ function render(data, quiet){
         }).join("");
     return `<section class="race">
       <h2>${esc(raceTitle(c.contestName))}</h2>
-      <div class="meta">${fmt(st.closedPolls||0)} of ${fmt(st.polls||0)} polls reporting · ${fmt(total)} votes</div>
+      <div class="meta">${(st.closedPolls || !total) ? fmt(st.closedPolls||0) + " of " + fmt(st.polls||0) + " polls reporting · " : ""}${fmt(total)} votes</div>
       ${rows}
     </section>`;
   }).join("") || `<p class="meta">No contests in this category.</p>`;
@@ -216,15 +216,16 @@ function render(data, quiet){
   if (!quiet) renderStatus(data);
 }
 
+function hasVotes(data){ return flatten(data).some(c => c.choiceResults.some(x => +x.votes > 0)); }
 function renderStatus(data, staleNote){
   const g = data.statistics || {};
   const stamp = parseStamp(g.timeStamp || "");
   const done = g.globPolls && g.globClosedPolls >= g.globPolls;
   document.getElementById("status").innerHTML =
     (DEMO ? `<span class="demo">DEMO DATA</span>` : "") +
-    `<span><b>${fmt(g.globClosedPolls||0)}</b> of <b>${fmt(g.globPolls||0)}</b> polls reporting</span>` +
+    (g.globClosedPolls || !hasVotes(data) ? `<span><b>${fmt(g.globClosedPolls||0)}</b> of <b>${fmt(g.globPolls||0)}</b> polls reporting</span>` : "") +
     (g.globTurnout && g.globTurnout !== "0%" ? `<span>Turnout <b>${esc(g.globTurnout)}</b></span>` : "") +
-    (stamp ? `<span>City update ${cpTime(stamp)}</span>` : "") +
+    (stamp && Date.now() - stamp < 86400000 ? `<span>City update ${cpTime(stamp)}</span>` : "") +
     (done ? `<span><b>All polls reported</b></span>` : `<span id="cd"></span>`) +
     (staleNote ? `<span class="stale">${staleNote}</span>` : "");
 }
@@ -240,8 +241,10 @@ async function poll(){
     if (DEMO) data = simulate(data);
     failures = 0;
     document.getElementById("err").hidden = true;
-    const changed = data.statistics?.timeStamp !== lastStamp || DEMO;
-    lastGood = data; lastStamp = data.statistics?.timeStamp;
+    // compare the whole file, not timeStamp: the city's test changed votes without touching the stamp
+    const sig = JSON.stringify(data.areaResults);
+    const changed = sig !== lastStamp || DEMO;
+    lastGood = data; lastStamp = sig;
     if (changed) render(data);
     const feedStale = r.headers.get("X-Feed-State") === "stale";
     renderStatus(data, feedStale ? "City feed not responding — showing last results" : "");

@@ -76,9 +76,23 @@ const NAME_FIX = {
   "TENBRINKE": "Tenbrinke",
 };
 
+// Acclaimed trustees: the city feed leaves these slots empty, so list them here.
+// tab: "hwdsb" (public) or "hwcdsb" (Catholic). Entries with a blank name are hidden.
+// Feed gaps: public areas 20, 26; Catholic areas 28, 29, 30, 34, 37, 38.
+const ACCLAIMED = [
+  {tab:"hwdsb",  race:"Ward 4",            name:"Abby Zaitley"},
+  {tab:"hwdsb",  race:"Ward 13",           name:"Chris Slye"},
+  {tab:"hwcdsb", race:"Wards 1, 2 and 15", name:"Mark Valvasori"},
+  {tab:"hwcdsb", race:"Wards 3 and 4",     name:"Ralph Agostino"},
+  {tab:"hwcdsb", race:"Ward 5",            name:"Aldo D'Intino"},
+  {tab:"hwcdsb", race:"Wards 9 and 11",    name:"Tyler Iorio"},
+  {tab:"french", race:"Conseil scolaire catholique MonAvenir", name:"Nathalie Dufour Seguin"},
+  {tab:"french", race:"Conseil scolaire Viamonde",             name:"Sonia Macaluso"},
+];
+
 /* ===== URL options =====
    ?race=1005        show one contest only (for embedding in a ward story)
-   ?tab=council      open on a tab: mayor | council | hwdsb | hwcdsb
+   ?tab=council      open on a tab: mayor | council | hwdsb | hwcdsb | french
    ?demo=1           fake votes accumulating each poll, for testing before election night
    ?src=URL          override the feed URL
    ?theme=light|dark force theme
@@ -94,6 +108,7 @@ const TABS = [
   {id:"council", label:"Council",               test:n => /^Councillor/i.test(n)},
   {id:"hwdsb",   label:"Public school board",   test:n => /District School Board/i.test(n) && !/Catholic/i.test(n)},
   {id:"hwcdsb",  label:"Catholic school board", test:n => /Catholic/i.test(n)},
+  {id:"french",  label:"French school boards",  test:() => false},   // all acclaimed
 ];
 let activeTab = TABS.some(t => t.id === qs.get("tab")) ? qs.get("tab") : "mayor";
 let lastGood = null, lastStamp = null, failures = 0, timer = null;
@@ -211,12 +226,22 @@ function render(data, quiet){
       <div class="meta">${(st.closedPolls || !total) ? fmt(st.closedPolls||0) + " of " + fmt(st.polls||0) + " polls reporting · " : ""}${fmt(total)} votes</div>
       ${rows}
     </section>`;
-  }).join("") || `<p class="meta">No contests in this category.</p>`;
+  }).join("") + acclaimedBox() || `<p class="meta">No contests in this category.</p>`;
 
   if (!quiet) renderStatus(data);
 }
 
 function hasVotes(data){ return flatten(data).some(c => c.choiceResults.some(x => +x.votes > 0)); }
+function acclaimedBox(){
+  if (ONLY_RACE) return "";
+  const list = ACCLAIMED.filter(a => a.tab === activeTab && a.name.trim());
+  if (!list.length) return "";
+  return `<section class="race"><h2>Acclaimed</h2>
+    <div class="meta">Elected without a vote</div>
+    ${list.map(a => `<div class="row"><div class="name">${esc(a.name)}</div>
+      <div class="num" style="grid-column:2 / 4">${esc(a.race)}</div></div>`).join("")}
+  </section>`;
+}
 function renderStatus(data, staleNote){
   const g = data.statistics || {};
   const stamp = parseStamp(g.timeStamp || "");

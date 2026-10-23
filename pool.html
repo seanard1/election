@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hamilton Election Pool</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Public+Sans:wght@400;600&display=swap">
+<style>
+*{box-sizing:border-box}
+/* Layout: a single ballot column; each race is a ballot section with oval marks */
+:root{
+  --paper:#fbfcfd; --ink:#16223a; --muted:#5a6678; --rule:#d7dde6; --tint:#eef2f7;
+  --mark:#16223a; --accent:#1d5fa8; --ok:#2f7d4f; --warn:#a55a00;
+  --display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --body:"Public Sans","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#11161f; --ink:#e6ebf2; --muted:#9aa6b8; --rule:#2c3646; --tint:#1a2230;
+  --mark:#e6ebf2; --accent:#7fb2ec; --ok:#6cc48f; --warn:#e0a24a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#11161f; --ink:#e6ebf2; --muted:#9aa6b8; --rule:#2c3646; --tint:#1a2230;
+  --mark:#e6ebf2; --accent:#7fb2ec; --ok:#6cc48f; --warn:#e0a24a; color-scheme:dark}
+body{background:var(--paper);color:var(--ink);font:15px/1.45 var(--body)}
+.wrap{max-width:720px;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{border-bottom:3px solid var(--ink);padding-bottom:12px;margin-bottom:18px}
+.eyebrow{font:600 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{font:800 clamp(26px,6vw,38px)/1.05 var(--display);margin:6px 0 8px;text-wrap:balance}
+.lede{color:var(--muted);margin:0;max-width:60ch}
+.who{display:grid;gap:6px;margin:18px 0 8px}
+label.big{font:600 13px/1 var(--display);letter-spacing:.06em;text-transform:uppercase}
+input[type=text],input[type=number]{font:16px var(--body);color:var(--ink);background:var(--paper);
+  border:1.5px solid var(--rule);border-radius:4px;padding:10px 12px;width:100%;max-width:360px}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.progress{font:600 13px var(--body);color:var(--muted);margin:14px 0 4px;font-variant-numeric:tabular-nums}
+fieldset{border:0;border-top:1px solid var(--rule);margin:0;padding:16px 0 12px}
+legend{font:800 18px/1.2 var(--display);padding:0;display:flex;gap:10px;align-items:baseline;width:100%}
+legend .count{font:400 12px var(--body);color:var(--muted)}
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 16px;margin-top:10px}
+.opt{display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:4px;cursor:pointer;min-width:0}
+.opt:hover{background:var(--tint)}
+.opt input{position:absolute;opacity:0;pointer-events:none}
+.oval{flex:none;width:30px;height:16px;border:1.5px solid var(--ink);border-radius:50%;transition:background .15s}
+.opt input:checked + .oval{background:var(--mark)}
+.opt input:focus-visible + .oval{outline:2px solid var(--accent);outline-offset:2px}
+.opt input:checked ~ .nm{font-weight:600}
+.nm{min-width:0;overflow-wrap:anywhere}
+.tie{border-top:1px solid var(--rule);padding:16px 0}
+.tie p{color:var(--muted);margin:4px 0 10px;font-size:13px}
+.tie .row{display:flex;align-items:center;gap:8px}
+.tie input{max-width:110px}
+.bar{position:sticky;bottom:0;background:var(--paper);border-top:3px solid var(--ink);
+  padding:12px 0 calc(12px + env(safe-area-inset-bottom,0px));display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-top:8px}
+button{font:800 15px var(--display);letter-spacing:.04em;text-transform:uppercase;background:var(--ink);color:var(--paper);
+  border:0;border-radius:4px;padding:12px 22px;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.status{font-size:13px;color:var(--muted)}
+.status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
+.owner{background:var(--tint);border-radius:4px;padding:12px 14px;margin:0 0 16px;font-size:13px}
+.owner b{font-variant-numeric:tabular-nums}
+.fine{color:var(--muted);font-size:12px;margin-top:18px}
+@media (prefers-reduced-motion:reduce){.oval{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Hamilton votes · Oct. 26, 2026</div>
+    <h1>Hamilton Election Pool</h1>
+    <p class="lede">Pick a winner for mayor and each of the 15 wards. Most correct picks wins. Closest guess on the mayor's vote share breaks a tie.</p>
+  </header>
+
+  <form id="f" novalidate>
+    <div class="who">
+      <label class="big" for="name">Your name</label>
+      <input type="text" id="name" autocomplete="name" maxlength="60" placeholder="First and last name">
+    </div>
+    <div class="progress" id="progress">0 of 16 races picked</div>
+    <div id="races"></div>
+    <div class="tie">
+      <label class="big" for="tb">Tiebreaker</label>
+      <p>What share of the vote will the winning mayor get?</p>
+      <div class="row"><input type="number" id="tb" min="1" max="100" step="1" inputmode="numeric" placeholder="41"><span>%</span></div>
+    </div>
+    <div class="bar">
+      <button type="submit" id="save" disabled>Submit my picks</button>
+      <span class="status" id="status"></span>
+    </div>
+  </form>
+  <p class="fine">Candidate list from the City of Hamilton results feed. Change your mind? Submit again before polls close at 8 p.m. on Oct. 26; only your latest entry counts.</p>
+</div>
+
+<script>
+const RACES = [{"race": "Mayor", "names": ["Sasha Austin", "Ejaz Butt", "David Mark Cherkewski", "Rob Cooper", "Paul Fromm", "Scarlett J. Gillespie", "David Harrison", "Andrea Horwath", "Erin Janus", "Keanin Loomis", "Pamela Mitchell", "Kevin M. Walker", "Nathalie Xian Yi Yan"]}, {"race": "Ward 1", "names": ["Raymond R. Paquette", "Mark Powell", "Nathan Savelli", "Maureen Wilson"]}, {"race": "Ward 2", "names": ["Eisham Abdulkarim", "Rodney Elesie", "Daniel E. Greene", "Bill Houston", "Cameron Kroetsch", "Brian Lewis", "Kelly Oucharek", "Tony Sciara", "Bernard J. Tompkins"]}, {"race": "Ward 3", "names": ["Wade Campbell", "Christine Cayuga", "Christopher DeMelo", "Nrinder Nann", "Graham Schreiber", "Andrew Selman", "Kristeen A. Sprague"]}, {"race": "Ward 4", "names": ["Todd Anderson", "Jason Farr", "Tammy Hwang", "Jemma Lambert", "Tony Mamone", "Tobin Tuff"]}, {"race": "Ward 5", "names": ["Matt Francis", "Ahmad Khan", "Juanita Maldonado"]}, {"race": "Ward 6", "names": ["Melissa Debicki", "Tom Jackson", "Peter Werhun"]}, {"race": "Ward 7", "names": ["Heather Beale", "Mark Daly", "Gordon Leslie", "Esther Pauls"]}, {"race": "Ward 8", "names": ["Nenos Damerchie", "Dawn Danko", "Jonathan Morris", "Pat Piro", "Adlan Taramov", "Jacob Tenbrinke", "Terry Whitehead"]}, {"race": "Ward 9", "names": ["Brad Clark", "Abhijeet Gill", "Brad Stapleton", "Jonathan Stathakos", "Eileen Walker"]}, {"race": "Ward 10", "names": ["Cal DiFalco", "Eugene Farago", "Olivia Fung", "Sam Gamble", "Akash Grewal", "Michael T. Loomans", "Ivan Luksic", "Tanjoban Nijjar", "Larry Paletta", "Vince Rigitano", "Nicole Trombetta"]}, {"race": "Ward 11", "names": ["Damon Mombourquette", "Aaron Post", "Mark Tadeson"]}, {"race": "Ward 12", "names": ["Fred Bennink", "Craig Cassar"]}, {"race": "Ward 13", "names": ["Gary Aikema", "Rick Kunc", "Loren Lieberman", "Spencer Naylor"]}, {"race": "Ward 14", "names": ["Kojo Damptey", "Mike Spadafora"]}, {"race": "Ward 15", "names": ["Chase B. Alford", "Mary Kovacs", "Ted McMeekin", "Colleen Stewart", "Zac Wrobel", "Jeff Yaeger"]}];
+const $ = s => document.querySelector(s);
+const slug = s => s.replace(/\W+/g,"-").toLowerCase();
+
+// build ballot
+$("#races").innerHTML = RACES.map(r => `
+  <fieldset>
+    <legend>${r.race}<span class="count">${r.names.length} candidates</span></legend>
+    <div class="opts">${r.names.map((n,i) => `
+      <label class="opt"><input type="radio" name="${slug(r.race)}" id="${slug(r.race)}-${i}" value="${n.replace(/"/g,"&quot;")}">
+      <span class="oval" aria-hidden="true"></span><span class="nm">${n}</span></label>`).join("")}
+    </div>
+  </fieldset>`).join("");
+
+function readForm(){
+  const picks = {};
+  RACES.forEach(r => { const c = document.querySelector(`input[name="${slug(r.race)}"]:checked`); if (c) picks[r.race] = c.value; });
+  const tb = parseFloat($("#tb").value);
+  return { name: $("#name").value.trim(), picks, tiebreaker: isFinite(tb) ? tb : null };
+}
+function fillForm(d){
+  if (d.name) $("#name").value = d.name;
+  if (d.tiebreaker != null) $("#tb").value = d.tiebreaker;
+  Object.entries(d.picks || {}).forEach(([race, n]) => {
+    const r = RACES.find(x => x.race === race); if (!r) return;
+    const i = r.names.indexOf(n); if (i >= 0) $(`#${slug(race)}-${i}`).checked = true;
+  });
+}
+function refresh(){
+  const d = readForm(), n = Object.keys(d.picks).length;
+  $("#progress").textContent = `${n} of ${RACES.length} races picked`;
+}
+document.addEventListener("change", refresh);
+const status = (t, cls="") => { const s = $("#status"); s.textContent = t; s.className = "status " + cls; };
+
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbxm3W-Bwm5QPxva1oRnao9YY3g5V4wP5t2N5sJAezSX_p6z3fgg0K2VKKyve1sJ67ii/exec";   // from Deploy > Web app
+
+status("");
+$("#save").disabled = false;
+$("#f").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const d = readForm();
+  if (!d.name) { status("Add your name first.", "warn"); $("#name").focus(); return; }
+  if (!Object.keys(d.picks).length) { status("Pick at least one race.", "warn"); return; }
+  $("#save").disabled = true; status("Saving…");
+  try {
+    // text/plain avoids a CORS preflight; Apps Script reads e.postData.contents
+    await fetch(SHEET_URL, { method: "POST", mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...d, submitted: new Date().toISOString() }) });
+    const left = RACES.length - Object.keys(d.picks).length;
+    status(left ? `Sent. ${left} race${left === 1 ? "" : "s"} left blank. Resubmit any time; your latest entry counts.` : "Sent. Resubmit any time; your latest entry counts.", "ok");
+    try { localStorage.setItem("pool-draft", JSON.stringify(d)); } catch (e) {}
+  } catch (e) {
+    status("Couldn't send. Check your connection and try again.", "warn");
+  }
+  $("#save").disabled = false;
+});
+try { const d = JSON.parse(localStorage.getItem("pool-draft") || "null"); if (d) { fillForm(d); refresh(); } } catch (e) {}
+</script>
+</body>
+</html>

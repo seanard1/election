@@ -131,10 +131,19 @@ const status = (t, cls="") => { const s = $("#status"); s.textContent = t; s.cla
 
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbxm3W-Bwm5QPxva1oRnao9YY3g5V4wP5t2N5sJAezSX_p6z3fgg0K2VKKyve1sJ67ii/exec";   // from Deploy > Web app
 
+const CUTOFF = new Date("2026-10-26T20:00:00-04:00");   // polls close, 8 p.m. EDT
+function closed(){ return Date.now() >= CUTOFF.getTime(); }
+function lock(){
+  $("#save").disabled = true;
+  document.querySelectorAll("#f input").forEach(i => i.disabled = true);
+  status("Entries closed at 8 p.m. on Oct. 26.", "warn");
+}
 status("");
 $("#save").disabled = false;
+if (closed()) lock(); else setTimeout(lock, CUTOFF.getTime() - Date.now());
 $("#f").addEventListener("submit", async ev => {
   ev.preventDefault();
+  if (closed()) { lock(); return; }
   const d = readForm();
   if (!d.name) { status("Add your name first.", "warn"); $("#name").focus(); return; }
   if (!Object.keys(d.picks).length) { status("Pick at least one race.", "warn"); return; }

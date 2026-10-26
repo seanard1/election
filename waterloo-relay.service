@@ -1,0 +1,14 @@
+[Unit]
+Description=Waterloo results SFTP relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=seanallen
+WorkingDirectory=/home/seanallen/election
+ExecStart=/usr/bin/python3 /home/seanallen/election/waterloo_relay.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

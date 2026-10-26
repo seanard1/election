@@ -1,0 +1,14 @@
+[Unit]
+Description=Hamilton election projections Slack watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=seanallen
+WorkingDirectory=/home/seanallen/election
+ExecStart=/usr/bin/python3 /home/seanallen/election/calls_watch.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
